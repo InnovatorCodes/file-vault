@@ -2,8 +2,6 @@
 
 **Flux** is a secure, high-performance file storage and sharing platform designed for privacy, speed, and efficiency. Built with a modern tech stack, it features intelligent file deduplication, granular user management, and secure public sharing capabilities.
 
-![Flux Dashboard](/frontend/public/logo.png)
-
 ## ✨ Key Features
 
 -   **🛡️ Secure Storage**: Robust file storage powered by **Supabase**.
@@ -11,7 +9,6 @@
 -   **🔗 Secure Sharing**: Generate public share links with download tracking and expiration logic.
 -   **⚡ High Performance**: Backend powered by **Go (Gin)** for blazing fast API responses.
 -   **👤 User Management**: Comprehensive admin dashboard for managing users, quotas, and rate limits.
--   **📧 Email Verification**: Integrated OTP-based email verification using SMTP.
 
 ## 🛠️ Tech Stack
 
@@ -52,9 +49,6 @@ Follow these instructions to set up the project locally.
     SUPABASE_REST_URL=https://your-project-id.supabase.co/rest/v1
     SUPABASE_STORAGE_URL=https://your-project-id.supabase.co/storage/v1
     SUPABASE_KEY=your_service_role_key__not_anon
-    SMTP_HOST=smtp.gmail.com
-    SMTP_USER=your_email@gmail.com
-    SMTP_PASS=your_app_password
     ```
 4.  Run the server:
     ```bash
