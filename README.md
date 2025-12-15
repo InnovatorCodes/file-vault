@@ -2,6 +2,8 @@
 
 **Flux** is a secure, high-performance file storage and sharing platform designed for privacy, speed, and efficiency. Built with a modern tech stack, it features intelligent file deduplication, granular user management, and secure public sharing capabilities.
 
+> **Note:** This project is designed as a locally integrated application (Go backend + React frontend). It is not currently deployed as a live demo due to the decoupled architecture requiring significant configuration (CORS, Proxy) to separate the services on standard hosting platforms.
+
 ## ✨ Key Features
 
 -   **🛡️ Secure Storage**: Robust file storage powered by **Supabase**.
@@ -16,6 +18,20 @@
 -   **Frontend**: React, TypeScript, Tailwind CSS, Framer Motion, Vite
 -   **Database & Auth**: Supabase (PostgreSQL, Storage, Auth)
 -   **Security**: bcrypt password hashing, Row Level Security (RLS)
+
+## 📸 Screenshots
+
+### Home Page
+![Home Page](./screenshots/homepage.png)
+
+### Files View
+![All Files](./screenshots/all-files.png)
+
+### Publicly Shared Files
+![Shared Files](./screenshots/shared.png)
+
+### Settings
+![Settings](./screenshots/settings.png)
 
 ## 🚀 Getting Started
 
@@ -40,10 +56,8 @@ Follow these instructions to set up the project locally.
     ```bash
     cd backend
     ```
-2.  Create a `.env` file (copy from `.env.example`):
-    ```bash
-    cp .env.example .env
-    ```
+2.  Create a `.env` file:
+
 3.  Update `.env` with your credentials:
     ```env
     SUPABASE_REST_URL=https://your-project-id.supabase.co/rest/v1
