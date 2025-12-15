@@ -1,0 +1,40 @@
+# Environment variables - IMPORTANT!
+# Never commit your secrets.
+.env
+
+# Go build artifacts and binaries
+# -----------------
+# Compiled executables
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.sql
+
+# The project's binary will often have the same name as the directory
+# Or the module name. Adjust if your binary has a different name.
+server
+
+# Test coverage files
+*.out
+coverage.txt
+
+# Dependency directories (though 'go mod' makes this less common)
+/vendor/
+
+# IDE and editor files
+# -----------------
+# VS Code
+.vscode/
+
+# JetBrains (GoLand)
+.idea/
+
+# System files
+# -----------------
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
