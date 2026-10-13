@@ -1,0 +1,20 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repo.
+# Render builds the Dockerfile and asks for the secret values marked sync: false.
+services:
+  - type: web
+    name: flux-file-vault
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_REST_URL
+        sync: false # https://<project-id>.supabase.co/rest/v1
+      - key: SUPABASE_STORAGE_URL
+        sync: false # https://<project-id>.supabase.co/storage/v1
+      - key: SUPABASE_KEY
+        sync: false # service_role key
+      - key: JWT_SECRET
+        generateValue: true # Render creates a random secret
+      - key: MAX_UPLOAD_MB
+        value: "10" # the free instance has 512 MB of memory

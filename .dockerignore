@@ -1,0 +1,9 @@
+# Keep secrets, local builds and dependencies out of the Docker build.
+**/.env
+**/node_modules
+frontend/dist
+backend/server
+backend/*.exe
+.git
+.vscode
+screenshots
