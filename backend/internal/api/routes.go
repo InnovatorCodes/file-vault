@@ -23,6 +23,7 @@ func SetupRoutes(router *gin.Engine, clients *database.AppClients) {
 	{
 		public.POST("/register", handlers.RegisterUser(clients.Postgrest))
 		public.POST("/login", handlers.LoginUser(clients.Postgrest))
+		public.POST("/demo-login", handlers.DemoLogin(clients.Postgrest))
 
 		// Anyone with a share link can view and download that one file.
 		public.GET("/share/:token", handlers.GetPublicShare(clients))

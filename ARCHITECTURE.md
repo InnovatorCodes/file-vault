@@ -20,7 +20,7 @@ In development, Vite runs the React app on port 5173 and forwards any `/api` req
 
 ## 2. Logging in and staying logged in
 
-1. **Sign up** (`POST /api/v1/register`): the server lower-cases the email, checks the password length, hashes the password with **bcrypt**, and inserts a row in `users`. New accounts get a 1 GB quota.
+1. **Sign up** (`POST /api/v1/register`): the server lower-cases the email, checks the password length, hashes the password with **bcrypt**, and inserts a row in `users`. New accounts get a 25 MB quota (`DEFAULT_QUOTA_MB`).
 2. **Log in** (`POST /api/v1/login`): the server finds the user by email and checks the password against the bcrypt hash. If it matches, the server creates a **JWT**, a short string signed with `JWT_SECRET`, that says "this is user X, valid for 24 hours".
 3. The browser stores that token in `localStorage` (`frontend/src/utils/api.ts → saveSession`).
 4. Every later request goes through `apiFetch`, which adds `Authorization: Bearer <token>`.
@@ -28,6 +28,8 @@ In development, Vite runs the React app on port 5173 and forwards any `/api` req
 6. If the token is missing, forged or expired, the server answers `401`. `apiFetch` then clears the session and sends the browser to `/login`.
 
 Nobody can create a valid token without `JWT_SECRET`, so a token can't be faked or edited to pose as another user.
+
+**The demo account.** When `DEMO_ACCOUNT=true`, the server creates a shared account (`demo@flux-file-vault.app`) at startup with a random password that is never stored or shown. The login page's "Try the demo" button calls `POST /api/v1/demo-login`, which hands out a token for that account. Because nobody knows the password, the only way in is that button, and the account's password can't be changed. Everyone using the demo shares the same files and 25 MB, and is rate-limited by IP address so one visitor can't slow down the others.
 
 ## 3. The data model and deduplication
 
@@ -79,6 +81,7 @@ Four tables (see `schema.sql`):
 |---|---|---|
 | `POST /api/v1/register` | no | Create an account |
 | `POST /api/v1/login` | no | Check password, return token and profile |
+| `POST /api/v1/demo-login` | no | Log into the shared demo account (only if `DEMO_ACCOUNT=true`) |
 | `GET /api/v1/share/:token` | no | Public file details |
 | `GET /api/v1/share/:token/download` | no | Public file download (+1 download) |
 | `POST /api/v1/upload` | yes | Upload a file (form field `file`) |
@@ -125,6 +128,7 @@ Four tables (see `schema.sql`):
 | `internal/handlers/files.go` | Upload (with dedup, MIME check, quota), list, search, download, delete, share/unshare, public share view/download, user stats, admin stats and admin file list. |
 | `internal/handlers/files_test.go` | Tests the MIME rules, the download filename header, and the token round-trip. |
 | `internal/handlers/users.go` | Register, login, quota lookup, password change, admin user update. |
+| `internal/handlers/demo.go` | The shared demo account: created at startup, logged into by the "Try the demo" button, password locked. |
 | `internal/handlers/admin.go` | `UpdateConfig`: admin sets a user's quota/rate limit by user ID in the request body. |
 | `internal/models/user.go` | Go struct matching the `users` table. `password_hash` and OTP fields never go out in JSON. |
 | `internal/models/file.go` | Structs for `file_contents`, `files`, `shares` and the joined results the queries return. `CustomTime` reads Postgres timestamps with or without a time zone. |
@@ -145,7 +149,7 @@ Four tables (see `schema.sql`):
 | `src/utils/formatBytes.ts` | Turns `1536` into `"1.5 KB"`. |
 | `src/components/auth/ProtectedRoute.tsx` | Sends logged-out visitors to `/login`. |
 | `src/components/auth/GuestRoute.tsx` | Sends logged-in users away from `/login` and `/signup`. |
-| `src/components/LoginPage.tsx` | Login form; saves the session and goes to `/`. |
+| `src/components/LoginPage.tsx` | Login form and the "Try the demo" button; saves the session and goes to `/`. |
 | `src/components/SignUpPage.tsx` | Sign-up form; goes to `/login` when done. |
 | `src/components/Layout.tsx` | The frame around logged-in pages: sidebar, page content, upload confirmation dialog, loading spinner. |
 | `src/components/Sidebar.tsx` | Logo, "New Upload" button, navigation links, storage bar (used of quota, dedup savings), profile button. |

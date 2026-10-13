@@ -18,3 +18,7 @@ services:
         generateValue: true # Render creates a random secret
       - key: MAX_UPLOAD_MB
         value: "10" # the free instance has 512 MB of memory
+      - key: DEFAULT_QUOTA_MB
+        value: "25" # per account; Supabase's free tier has 1 GB of storage in total
+      - key: DEMO_ACCOUNT
+        value: "true" # enables the "Try the demo" button

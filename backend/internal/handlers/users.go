@@ -8,6 +8,8 @@ import (
 	"fmt" // Import fmt for error handling
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +19,39 @@ import (
 
 // minPasswordLength matches the check the frontend does before submitting.
 const minPasswordLength = 6
+
+// defaultQuotaMB is each new account's storage quota when DEFAULT_QUOTA_MB is not set.
+// It is kept small because anyone can sign up on the public demo.
+const defaultQuotaMB = 25
+
+func defaultStorageQuota() int64 {
+	if mb, err := strconv.ParseInt(os.Getenv("DEFAULT_QUOTA_MB"), 10, 64); err == nil && mb > 0 {
+		return mb << 20
+	}
+	return defaultQuotaMB << 20
+}
+
+// sendSession issues a login token and replies with it and the user's profile.
+func sendSession(c *gin.Context, userID, username, email, firstName, lastName string, isAdmin bool) {
+	// Every protected request must send this token back; the server reads the user ID from it.
+	token, err := auth.IssueToken(userID)
+	if err != nil {
+		log.Printf("Error issuing token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":    "Login successful",
+		"token":      token,
+		"user_id":    userID,
+		"username":   username,
+		"email":      email,
+		"first_name": firstName,
+		"last_name":  lastName,
+		"is_admin":   isAdmin,
+	})
+}
 
 // normalizeEmail makes "Alex@Example.com " and "alex@example.com" the same account.
 func normalizeEmail(email string) string {
@@ -85,7 +120,7 @@ func RegisterUser(db *postgrest.Client) gin.HandlerFunc {
 			"password_hash": string(hashedPassword),
 			"first_name":    newUser.FirstName,
 			"last_name":     newUser.LastName,
-			"storage_quota": 1073741824, // Default to 1GB
+			"storage_quota": defaultStorageQuota(),
 		}
 
 		// Add date_of_birth only if it's provided
@@ -169,25 +204,8 @@ func LoginUser(db *postgrest.Client) gin.HandlerFunc {
 			return
 		}
 
-		// At this point, the password is correct. Issue a signed token; every protected
-		// request must send it back, and the server reads the user ID from it.
-		token, err := auth.IssueToken(user.UserID)
-		if err != nil {
-			log.Printf("Error issuing token: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"message":    "Login successful",
-			"token":      token,
-			"user_id":    user.UserID,
-			"username":   user.Username,
-			"email":      user.Email,
-			"first_name": user.FirstName,
-			"last_name":  user.LastName,
-			"is_admin":   user.IsAdmin,
-		})
+		// At this point, the password is correct.
+		sendSession(c, user.UserID, user.Username, user.Email, user.FirstName, user.LastName, user.IsAdmin)
 	}
 }
 
@@ -238,6 +256,10 @@ func UpdatePassword(clients *database.AppClients) gin.HandlerFunc {
 		userModel, ok := user.(models.User)
 		if !ok {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user model in context"})
+			return
+		}
+		if IsDemoUser(userModel) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "The demo account's password can't be changed. Sign up to get your own account."})
 			return
 		}
 

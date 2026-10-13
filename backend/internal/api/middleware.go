@@ -3,6 +3,7 @@ package api
 import (
 	"file-vault/backend/internal/auth"
 	"file-vault/backend/internal/database"
+	"file-vault/backend/internal/handlers"
 	"file-vault/backend/internal/models"
 	"net/http"
 	"strings"
@@ -61,22 +62,24 @@ func (u *UserRateLimiter) GetLimiter(key string) *rate.Limiter {
 func RateLimitMiddleware(limiter *UserRateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		key := "ip:" + c.ClientIP()
-		if userID := c.GetString("userID"); userID != "" {
-			key = "user:" + userID
+		u, _ := c.Get("user")
+		user, loggedIn := u.(models.User)
+		// Everyone trying the demo shares one account, so count them by IP instead,
+		// or one visitor's clicks would slow down all the others.
+		if loggedIn && !handlers.IsDemoUser(user) {
+			key = "user:" + user.UserID
 		}
 
 		userLimiter := limiter.GetLimiter(key)
 
 		// AuthMiddleware already loaded the user, so a custom limit costs no extra query.
-		if u, ok := c.Get("user"); ok {
-			if user, ok := u.(models.User); ok && user.RateLimit > 0 {
-				newLimit := rate.Limit(user.RateLimit)
-				// Allow a short burst so a page that fires a few requests at once still loads.
-				newBurst := max(user.RateLimit*2, limiter.b)
-				if userLimiter.Limit() != newLimit || userLimiter.Burst() != newBurst {
-					userLimiter.SetLimit(newLimit)
-					userLimiter.SetBurst(newBurst)
-				}
+		if loggedIn && user.RateLimit > 0 {
+			newLimit := rate.Limit(user.RateLimit)
+			// Allow a short burst so a page that fires a few requests at once still loads.
+			newBurst := max(user.RateLimit*2, limiter.b)
+			if userLimiter.Limit() != newLimit || userLimiter.Burst() != newBurst {
+				userLimiter.SetLimit(newLimit)
+				userLimiter.SetBurst(newBurst)
 			}
 		}
 

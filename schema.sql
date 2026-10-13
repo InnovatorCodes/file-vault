@@ -15,7 +15,7 @@ create table if not exists users (
     password_hash   text not null,
     is_admin        boolean not null default false,
     rate_limit      integer not null default 2,             -- API requests per second
-    storage_quota   bigint  not null default 1073741824,    -- bytes (1 GB)
+    storage_quota   bigint  not null default 26214400,      -- bytes (25 MB); the server sets it from DEFAULT_QUOTA_MB
     created_at      timestamptz not null default now(),
     first_name      text,
     last_name       text,

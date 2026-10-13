@@ -29,6 +29,28 @@ const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const navigate = useNavigate();
+  const [demoLoading, setDemoLoading] = useState(false);
+
+  // Logs into the shared demo account, so visitors can try the app without signing up.
+  const handleDemoLogin = async () => {
+    setDemoLoading(true);
+    try {
+      const response = await fetch("/api/v1/demo-login", { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        toast.error(data.error || "The demo account is unavailable right now.");
+        return;
+      }
+      saveSession(data);
+      toast.success("Welcome! You're using the shared demo account.");
+      navigate("/");
+    } catch (error) {
+      console.error("Demo login error:", error);
+      toast.error("Could not reach the server. Please try again.");
+    } finally {
+      setDemoLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +171,18 @@ const LoginPage: React.FC = () => {
               </button>
             </motion.div>
           </form>
+
+          {/* Demo Login */}
+          <motion.div variants={itemVariants} className="mt-4">
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={demoLoading}
+              className="w-full border border-zinc-700 hover:border-zinc-500 hover:bg-zinc-800 text-gray-200 font-semibold py-3 px-4 rounded-lg transition-colors duration-300 disabled:opacity-60 disabled:cursor-wait"
+            >
+              {demoLoading ? "Opening demo..." : "Try the demo, no sign-up needed"}
+            </button>
+          </motion.div>
 
           {/* Sign-up Link */}
           <motion.div variants={itemVariants} className="text-center mt-8">

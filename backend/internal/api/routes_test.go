@@ -60,3 +60,19 @@ func TestProtectedRoutesRequireToken(t *testing.T) {
 		}
 	}
 }
+
+// The demo login must refuse to work unless DEMO_ACCOUNT=true is set on the server.
+func TestDemoLoginDisabledByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("JWT_SECRET", "test-secret")
+	t.Setenv("DEMO_ACCOUNT", "")
+
+	router := gin.New()
+	SetupRoutes(router, &database.AppClients{Postgrest: postgrest.NewClient("http://127.0.0.1:1", "", nil)})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("POST", "/api/v1/demo-login", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got status %d, want 404 when the demo is disabled", w.Code)
+	}
+}

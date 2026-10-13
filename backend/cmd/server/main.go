@@ -9,6 +9,7 @@ import (
 
 	"file-vault/backend/internal/api"
 	"file-vault/backend/internal/database"
+	"file-vault/backend/internal/handlers"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -27,6 +28,12 @@ func main() {
 	clients, err := database.InitDB()
 	if err != nil {
 		log.Fatalf("Failed to initialize Supabase clients: %v", err)
+	}
+
+	if handlers.DemoEnabled() {
+		if err := handlers.EnsureDemoUser(clients.Postgrest); err != nil {
+			log.Printf("Demo account unavailable: %v", err) // the rest of the app still works
+		}
 	}
 
 	router := gin.Default()

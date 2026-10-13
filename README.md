@@ -64,7 +64,9 @@ Follow these instructions to set up the project locally.
 
     # Optional
     PORT=8080
-    MAX_UPLOAD_MB=50
+    MAX_UPLOAD_MB=50       # largest single upload
+    DEFAULT_QUOTA_MB=25    # storage for each new account
+    DEMO_ACCOUNT=true      # adds a "Try the demo" button that needs no sign-up
     ```
 3.  Run the server:
     ```bash
@@ -108,7 +110,7 @@ The included `Dockerfile` builds the frontend and backend into one image, and `r
 
 1.  Set up Supabase as in step 1 above.
 2.  Push this repo to GitHub.
-3.  In Render: **New → Blueprint**, pick the repo, and fill in `SUPABASE_REST_URL`, `SUPABASE_STORAGE_URL` and `SUPABASE_KEY` when asked. `JWT_SECRET` is generated for you.
+3.  In Render: **New → Blueprint**, pick the repo, and fill in `SUPABASE_REST_URL`, `SUPABASE_STORAGE_URL` and `SUPABASE_KEY` when asked. `JWT_SECRET` is generated for you, and the demo account and a 25 MB per-account quota are switched on.
 4.  Wait for the build, then open the `.onrender.com` URL Render gives you.
 
 Free-tier notes: the Render service sleeps after about 15 minutes without traffic, so the first visit after that takes 30–60 seconds. Supabase pauses free projects after a week with no activity.
