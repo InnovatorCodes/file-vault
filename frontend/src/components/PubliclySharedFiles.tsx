@@ -9,9 +9,11 @@ import {
   Presentation,
   Download,
   Copy,
+  Link2Off,
 } from "lucide-react";
 // import { toast } from "sonner";
 import { formatBytes } from "../utils/formatBytes";
+import { apiFetch, saveBlob } from "../utils/api";
 
 // --- TYPES & VARIANTS ---
 interface PubliclySharedFileItem {
@@ -44,36 +46,36 @@ const PubliclySharedFiles = () => {
   const [publicFiles, setPublicFiles] = useState<PubliclySharedFileItem[]>([]);
   // Removed unused 'view' and 'setView' state variables
 
+  const fetchPubliclySharedFiles = async () => {
+    try {
+      const response = await apiFetch("/api/v1/user/shared-publicly");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setPublicFiles(data || []);
+    } catch (error) {
+      console.error("Failed to fetch publicly shared files:", error);
+      // toast.error("Failed to load publicly shared files.");
+      setPublicFiles([]);
+    }
+  };
+
   useEffect(() => {
-    const fetchPubliclySharedFiles = async () => {
-      const userId = localStorage.getItem("user_id");
-      if (!userId) {
-        console.error("User ID not found in localStorage.");
-        // toast.error("You must be logged in to view publicly shared files.");
-        return;
-      }
-
-      try {
-        const response = await fetch(`http://localhost:8080/api/v1/user/shared-publicly`, { // Explicitly target backend
-          headers: {
-            "X-User-ID": userId, // Add X-User-ID header
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        // console.log(data);
-        setPublicFiles(data || []);
-      } catch (error) {
-        console.error("Failed to fetch publicly shared files:", error);
-        // toast.error("Failed to load publicly shared files.");
-        setPublicFiles([]);
-      }
-    };
-
     fetchPubliclySharedFiles();
   }, []);
+
+  const handleStopSharing = async (fileId: string) => {
+    try {
+      const response = await apiFetch(`/api/v1/user/files/${fileId}/share`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      fetchPubliclySharedFiles(); // The file drops out of the list
+    } catch (error) {
+      console.error("Failed to stop sharing:", error);
+    }
+  };
 
   const handleCopyShareLink = (shareToken: string) => {
     const shareLink = `${window.location.origin}/share/${shareToken}`;
@@ -83,19 +85,12 @@ const PubliclySharedFiles = () => {
 
   const handleDownloadPublicFile = async (shareToken: string, filename: string) => {
     try {
-      const response = await fetch(`http://localhost:8080/share/${shareToken}/download`); // Explicitly target backend
+      const response = await fetch(`/api/v1/share/${shareToken}/download`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(await response.blob(), filename);
+      fetchPubliclySharedFiles(); // Show the new download count
       // toast.success("File downloaded successfully!");
     } catch (error) {
       console.error("Download failed:", error);
@@ -159,6 +154,13 @@ const PubliclySharedFiles = () => {
                     title="Download File"
                   >
                     <Download size={18} />
+                  </button>
+                  <button
+                    onClick={() => handleStopSharing(file.file_id)}
+                    className="p-2 rounded-full text-zinc-500 hover:bg-red-500/10 hover:text-red-400 transition"
+                    title="Stop Sharing"
+                  >
+                    <Link2Off size={18} />
                   </button>
                 </div>
               </div>

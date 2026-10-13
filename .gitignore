@@ -10,11 +10,10 @@
 *.dll
 *.so
 *.dylib
-*.sql
 
-# The project's binary will often have the same name as the directory
-# Or the module name. Adjust if your binary has a different name.
-server
+# The compiled server binary (go build -o server ./cmd/server).
+# Anchored to the backend folder so it does not also hide backend/cmd/server/.
+/backend/server
 
 # Test coverage files
 *.out

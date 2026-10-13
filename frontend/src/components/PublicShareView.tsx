@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { formatBytes } from "../utils/formatBytes";
+import { saveBlob } from "../utils/api";
 
 interface PublicShareDetails {
   file_id: string;
@@ -49,7 +50,7 @@ const PublicShareView: React.FC = () => {
       }
 
       try {
-        const response = await fetch(`http://localhost:8080/share/${token}`); // Explicitly target backend
+        const response = await fetch(`/api/v1/share/${token}`);
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
@@ -75,20 +76,13 @@ const PublicShareView: React.FC = () => {
     if (!token || !fileDetails) return;
 
     try {
-      const response = await fetch(`http://localhost:8080/share/${token}/download`); // Explicitly target backend
+      const response = await fetch(`/api/v1/share/${token}/download`);
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileDetails.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(await response.blob(), fileDetails.filename);
+      setFileDetails({ ...fileDetails, download_count: fileDetails.download_count + 1 });
       toast.success("File downloaded successfully!");
     } catch (err) {
       console.error("Download failed:", err);

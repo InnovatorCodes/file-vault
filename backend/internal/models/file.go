@@ -48,11 +48,11 @@ func (ct CustomTime) MarshalJSON() ([]byte, error) {
 // FileContent represents the metadata of a unique file blob in the 'file_contents' table
 type FileContent struct {
 	ContentID      string     `json:"content_id,omitempty"`
-	HashSHA256     string     `json:"hash_sha256,-"` // Hide from JSON output
+	HashSHA256     string     `json:"hash_sha256"` // Needed when inserting; never sent to clients directly
 	Size           int64      `json:"size"`
 	MimeType       string     `json:"mime_type"`
-	StoragePath    string     `json:"storage_path,-"` // Hide from JSON output
-	ReferenceCount int        `json:"reference_count,-"` // Hide from JSON output
+	StoragePath    string     `json:"storage_path"`
+	ReferenceCount int        `json:"reference_count"`
 	CreatedAt      CustomTime `json:"created_at,omitempty"`
 }
 

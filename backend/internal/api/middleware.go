@@ -1,16 +1,18 @@
 package api
 
 import (
+	"file-vault/backend/internal/auth"
 	"file-vault/backend/internal/database"
 	"file-vault/backend/internal/models"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
 )
 
-// UserRateLimiter stores a rate limiter for each user ID.
+// UserRateLimiter stores a rate limiter for each user ID (or client IP for anonymous requests).
 type UserRateLimiter struct {
 	users map[string]*rate.Limiter
 	mu    *sync.RWMutex
@@ -28,58 +30,56 @@ func NewUserRateLimiter(r rate.Limit, b int) *UserRateLimiter {
 	}
 }
 
-// AddUser creates a new rate limiter for a user ID.
-func (u *UserRateLimiter) AddUser(userID string) *rate.Limiter {
+// AddUser creates a new rate limiter for a key, unless another request created it first.
+func (u *UserRateLimiter) AddUser(key string) *rate.Limiter {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
+	if limiter, exists := u.users[key]; exists {
+		return limiter
+	}
 	limiter := rate.NewLimiter(u.r, u.b)
-	u.users[userID] = limiter
+	u.users[key] = limiter
 	return limiter
 }
 
-// GetLimiter returns the rate limiter for a user ID.
-func (u *UserRateLimiter) GetLimiter(userID string) *rate.Limiter {
+// GetLimiter returns the rate limiter for a key.
+func (u *UserRateLimiter) GetLimiter(key string) *rate.Limiter {
 	u.mu.RLock()
-	limiter, exists := u.users[userID]
+	limiter, exists := u.users[key]
 	u.mu.RUnlock()
 
 	if !exists {
-		return u.AddUser(userID)
+		return u.AddUser(key)
 	}
 
 	return limiter
 }
 
-// RateLimitMiddleware is a Gin middleware for per-user rate limiting.
-func RateLimitMiddleware(limiter *UserRateLimiter, clients *database.AppClients) gin.HandlerFunc {
+// RateLimitMiddleware limits requests per user. On routes behind AuthMiddleware it uses the
+// logged-in user and their rate_limit column; on public routes it falls back to the client IP.
+func RateLimitMiddleware(limiter *UserRateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.Query("owner_id")
-		if userID == "" {
-			c.Next()
-			return
+		key := "ip:" + c.ClientIP()
+		if userID := c.GetString("userID"); userID != "" {
+			key = "user:" + userID
 		}
 
-		// Get or create a limiter for the user.
-		userLimiter := limiter.GetLimiter(userID)
+		userLimiter := limiter.GetLimiter(key)
 
-		// Fetch the user's specific rate limit from the database.
-		var user models.User
-		_, err := clients.Postgrest.From("users").Select("rate_limit", "", false).Single().Eq("user_id", userID).ExecuteTo(&user)
-
-		// If user is found and has a specific rate limit, update the limiter.
-		if err == nil && user.RateLimit > 0 {
-			newLimit := rate.Limit(user.RateLimit)
-			newBurst := user.RateLimit // Set burst equal to the rate limit for stricter enforcement
-
-			// Update the limiter only if the settings have changed.
-			if userLimiter.Limit() != newLimit || userLimiter.Burst() != newBurst {
-				userLimiter.SetLimit(newLimit)
-				userLimiter.SetBurst(newBurst)
+		// AuthMiddleware already loaded the user, so a custom limit costs no extra query.
+		if u, ok := c.Get("user"); ok {
+			if user, ok := u.(models.User); ok && user.RateLimit > 0 {
+				newLimit := rate.Limit(user.RateLimit)
+				// Allow a short burst so a page that fires a few requests at once still loads.
+				newBurst := max(user.RateLimit*2, limiter.b)
+				if userLimiter.Limit() != newLimit || userLimiter.Burst() != newBurst {
+					userLimiter.SetLimit(newLimit)
+					userLimiter.SetBurst(newBurst)
+				}
 			}
 		}
 
-		// Now, check if the request is allowed.
 		if !userLimiter.Allow() {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Too many requests"})
 			return
@@ -89,58 +89,52 @@ func RateLimitMiddleware(limiter *UserRateLimiter, clients *database.AppClients)
 	}
 }
 
-// AuthMiddleware checks if a user is authenticated.
+// AuthMiddleware checks the signed token from the Authorization header and loads the user.
+// The user ID always comes from the token, never from a header or query parameter the
+// client could change.
 func AuthMiddleware(clients *database.AppClients) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// In a real app, you would parse a JWT token from the Authorization header.
-		// For this exercise, we'll assume the user ID is passed in a custom header for simplicity.
-		userID := c.GetHeader("X-User-ID")
-		if userID == "" {
-			// Fallback to query parameter for compatibility with existing routes if needed,
-			// but prefer header for authenticated requests.
-			userID = c.Query("user_id")
+		header := c.GetHeader("Authorization")
+		tokenString, found := strings.CutPrefix(header, "Bearer ")
+		if !found || tokenString == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+			return
 		}
 
-		if userID == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authentication required: User ID missing"})
+		userID, err := auth.ParseToken(tokenString)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired session, please log in again"})
 			return
 		}
 
 		var user models.User
-		_, err := clients.Postgrest.From("users").Select("*", "", false).Single().Eq("user_id", userID).ExecuteTo(&user)
+		_, err = clients.Postgrest.From("users").Select("*", "", false).Single().Eq("user_id", userID).ExecuteTo(&user)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID or user not found"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 			return
 		}
 
 		// Set the user ID and user model in the context for subsequent handlers
-		c.Set("userID", userID)
+		c.Set("userID", user.UserID)
 		c.Set("user", user)
 		c.Next()
 	}
 }
 
-// AdminAuthMiddleware checks if a user has admin privileges by querying the database.
-func AdminAuthMiddleware(clients *database.AppClients) gin.HandlerFunc {
+// AdminAuthMiddleware allows the request through only if the logged-in user is an admin.
+// It must run after AuthMiddleware.
+func AdminAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		userID := c.Query("user_id") // In a real app, get this from JWT/session
-		if userID == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "User ID is required"})
+		u, _ := c.Get("user")
+		user, ok := u.(models.User)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
 			return
 		}
-
-		var user models.User
-		_, err := clients.Postgrest.From("users").Select("*", "", false).Single().Eq("user_id", userID).ExecuteTo(&user)
-		if err != nil {
-			c.AbortWithStatusJSON(http.StatusNotFound, gin.H{"error": "User not found"})
-			return
-		}
-
 		if !user.IsAdmin {
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
 			return
 		}
-
 		c.Next()
 	}
 }

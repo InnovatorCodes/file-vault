@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { formatBytes } from "../utils/formatBytes";
+import { apiFetch } from "../utils/api";
 
 const SettingsPage = () => {
   const [quota, setQuota] = useState({
@@ -14,14 +15,8 @@ const SettingsPage = () => {
 
   useEffect(() => {
     const fetchQuota = async () => {
-      const userId = localStorage.getItem("user_id");
-      if (!userId) {
-        toast.error("User ID not found in localStorage.");
-        return;
-      }
-
       try {
-        const response = await fetch(`/api/v1/user/quota?user_id=${userId}`);
+        const response = await apiFetch("/api/v1/user/quota");
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -51,17 +46,10 @@ const SettingsPage = () => {
     }
 
     try {
-      const userId = localStorage.getItem("user_id");
-      if (!userId) {
-        toast.error("User ID not found. Please log in.");
-        return;
-      }
-
-      const response = await fetch("/api/v1/user/password", {
+      const response = await apiFetch("/api/v1/user/password", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-User-ID": userId, // Use X-User-ID header for authentication
         },
         body: JSON.stringify({
           current_password: currentPassword,

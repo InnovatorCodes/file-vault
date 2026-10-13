@@ -1,8 +1,9 @@
 import React from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
+import { isLoggedIn } from '../../utils/api';
 
 const ProtectedRoute: React.FC = () => {
-  const isAuthenticated = !!localStorage.getItem('user_id');
+  const isAuthenticated = isLoggedIn();
   return isAuthenticated ? <Outlet /> : <Navigate to="/login" />;
 };
 

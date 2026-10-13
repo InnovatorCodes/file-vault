@@ -1,8 +1,10 @@
 package database
 
 import (
+	"io"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/supabase-community/postgrest-go"
 	storage_go "github.com/supabase-community/storage-go"
@@ -11,7 +13,33 @@ import (
 // AppClients holds the PostgREST and Storage clients
 type AppClients struct {
 	Postgrest *postgrest.Client
-	Storage   *storage_go.Client
+	Storage   *LockedStorage
+}
+
+// LockedStorage wraps the storage-go client so only one call runs at a time.
+// storage-go keeps its request headers in a single shared map and changes it during
+// uploads, so two requests at once can crash the process with a concurrent map write.
+type LockedStorage struct {
+	mu     sync.Mutex
+	client *storage_go.Client
+}
+
+func (s *LockedStorage) UploadFile(bucketID, path string, data io.Reader, opts ...storage_go.FileOptions) (storage_go.FileUploadResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.client.UploadFile(bucketID, path, data, opts...)
+}
+
+func (s *LockedStorage) DownloadFile(bucketID, path string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.client.DownloadFile(bucketID, path)
+}
+
+func (s *LockedStorage) RemoveFile(bucketID string, paths []string) ([]storage_go.FileUploadResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.client.RemoveFile(bucketID, paths)
 }
 
 // InitDB initializes and returns a custom struct containing PostgREST and Storage clients
@@ -39,8 +67,8 @@ func InitDB() (*AppClients, error) {
 		"Authorization": "Bearer " + supabaseKey,
 	})
 
-	// You can optionally test connections here if needed
-	// For example, try to list buckets with storageClient
+	// Make sure the bucket exists. It stays private: every download goes through the API,
+	// which checks who is asking.
 	_, err := storageClient.GetBucket("file-vault-storage")
 	if err != nil {
 		_, err = storageClient.CreateBucket("file-vault-storage", storage_go.BucketOptions{
@@ -54,6 +82,6 @@ func InitDB() (*AppClients, error) {
 
 	return &AppClients{
 		Postgrest: postgrestClient,
-		Storage:   storageClient,
+		Storage:   &LockedStorage{client: storageClient},
 	}, nil
 }

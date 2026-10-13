@@ -22,6 +22,7 @@ import {
 import { useConfirmationDialog } from "../hooks/useConfirmationDialog"; // Import useConfirmationDialog hook
 import FilterPopover, { type FilterOptions } from "./FilterPopover"; // Import FilterPopover
 import { formatBytes } from "../utils/formatBytes";
+import { apiFetch, saveBlob, notifyFilesChanged, FILES_CHANGED_EVENT } from "../utils/api";
 
 // --- TYPES & VARIANTS ---
 interface FileItem {
@@ -201,33 +202,26 @@ const AllFiles = () => {
 
   useEffect(() => {
     const fetchFiles = async () => {
-      const userId = localStorage.getItem("user_id");
-      const isAdmin = localStorage.getItem("is_admin") === "true"; // Retrieve is_admin status
-
-      if (!userId) {
-        console.error("User ID not found in localStorage.");
-        return;
-      }
+      const isAdmin = localStorage.getItem("is_admin") === "true"; // Only picks the view; the server checks admin rights
 
       let apiUrl = `/api/v1/search`; // Default API for regular users
       const params = new URLSearchParams();
 
       if (isAdmin) {
         apiUrl = `/api/v1/admin/files`; // Admin API
-        params.append("user_id", userId); // Re-add user_id param for admin files API as per feedback
       } else {
-        params.append("owner_id", userId); // Only append owner_id for non-admin users
-
         if (searchQuery) {
           params.append("filename", searchQuery);
         }
 
         const utcFilters = { ...filters };
+        // Date inputs give "YYYY-MM-DD". Use the start and end of that day in the user's
+        // own time zone, so files uploaded during the end date are included.
         if (utcFilters.start_date) {
-          utcFilters.start_date = new Date(utcFilters.start_date).toISOString();
+          utcFilters.start_date = new Date(`${utcFilters.start_date}T00:00:00`).toISOString();
         }
         if (utcFilters.end_date) {
-          utcFilters.end_date = new Date(utcFilters.end_date).toISOString();
+          utcFilters.end_date = new Date(`${utcFilters.end_date}T23:59:59.999`).toISOString();
         }
 
         Object.entries(utcFilters).forEach(([key, value]) => {
@@ -238,7 +232,7 @@ const AllFiles = () => {
       }
 
       try {
-        const response = await fetch(`${apiUrl}?${params.toString()}`);
+        const response = await apiFetch(`${apiUrl}?${params.toString()}`);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -274,6 +268,9 @@ const AllFiles = () => {
 
   useEffect(() => {
     setSearchTrigger(1);
+    const refresh = () => setSearchTrigger((prev) => prev + 1);
+    window.addEventListener(FILES_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, refresh);
   }, []);
 
   const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -293,19 +290,9 @@ const AllFiles = () => {
 
   const handleShareFile = async (file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
-    const userId = localStorage.getItem("user_id");
-    if (!userId) {
-      // toast.error("You must be logged in to share files.");
-      return;
-    }
-
     try {
-      const response = await fetch(`/api/v1/user/files/${file.file_id}/share`, {
+      const response = await apiFetch(`/api/v1/user/files/${file.file_id}/share`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-ID": userId, // Add X-User-ID header
-        },
       });
 
       if (!response.ok) {
@@ -327,7 +314,6 @@ const AllFiles = () => {
       //     },
       //   }
       // );
-      setSearchTrigger((prev) => prev + 1); // Refresh files to show updated share status if needed
     } catch (error) {
       console.error("Error sharing file:", error);
       // if (error instanceof Error) {
@@ -343,23 +329,14 @@ const AllFiles = () => {
   // Handlers for upload, delete etc. (can be expanded)
   const handleDelete = (fileId: string, filename: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    const userId = localStorage.getItem("user_id");
-    if (!userId) {
-      // toast.error("You must be logged in to delete files.");
-      return;
-    }
-
     openConfirmation({
       title: "Confirm Deletion",
       message: `Are you sure you want to delete "${filename}"? This action cannot be undone.`,
       onConfirm: async () => {
         try {
-          const response = await fetch(
-            `/api/v1/files/${fileId}?user_id=${userId}`,
-            {
-              method: "DELETE",
-            }
-          );
+          const response = await apiFetch(`/api/v1/files/${fileId}`, {
+            method: "DELETE",
+          });
 
           if (!response.ok) {
             const errorData = await response.json();
@@ -367,7 +344,7 @@ const AllFiles = () => {
           }
 
           // toast.success("File deleted successfully!");
-          window.location.reload(); // Refresh the page to reflect changes
+          notifyFilesChanged(); // Refresh the file list and storage stats
         } catch (error) {
           console.error("Error deleting file:", error);
           if (error instanceof Error) {
@@ -385,19 +362,11 @@ const AllFiles = () => {
   const handleDownload = async (file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     try {
-      const response = await fetch(`/api/v1/files/${file.file_id}`);
+      const response = await apiFetch(`/api/v1/files/${file.file_id}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(await response.blob(), file.filename);
     } catch (error) {
       console.error("Download failed:", error);
       alert("Failed to download file. Please try again later.");

@@ -3,6 +3,7 @@ import { motion, type Variants } from "framer-motion";
 import { Mail, Lock } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { saveSession } from "../utils/api";
 // Reusable Framer Motion variants for staggered animation
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -61,14 +62,7 @@ const LoginPage: React.FC = () => {
 
       if (response.ok) {
         toast.success("Login successful!");
-        // Assuming the backend returns user_id, username and email on successful login
-        // console.log(data) // Removed debug log
-        localStorage.setItem("user_id", data.user_id);
-        localStorage.setItem("username", data.username);
-        localStorage.setItem("email", data.email);
-        localStorage.setItem("first_name", data.first_name);
-        localStorage.setItem("last_name", data.last_name)
-        localStorage.setItem("is_admin", data.is_admin)
+        saveSession(data); // Stores the login token and profile details
         navigate("/"); // Redirect to home page
       } else {
         toast.error(`Login failed: ${data.error || 'Unknown server error'}`);

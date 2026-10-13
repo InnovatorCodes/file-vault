@@ -6,56 +6,57 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
-	// Import postgrest-go
 )
 
+const bucketName = "file-vault-storage"
+
 // SetupRoutes configures the API routes
-func SetupRoutes(router *gin.Engine, clients *database.AppClients) { // Accept AppClients
+func SetupRoutes(router *gin.Engine, clients *database.AppClients) {
 	// Initialize the rate limiter: 2 requests per second with a burst of 4.
 	limiter := NewUserRateLimiter(rate.Limit(2), 4)
 
-	// Group routes under /api/v1
 	v1 := router.Group("/api/v1")
-	v1.Use(RateLimitMiddleware(limiter, clients)) // Apply the rate limiting middleware to all v1 routes
-	{
-		// User routes
-		v1.POST("/register", handlers.RegisterUser(clients.Postgrest)) // Pass Postgrest client
-		v1.POST("/login", handlers.LoginUser(clients.Postgrest))       // Pass Postgrest client
 
-		// Authenticated user routes
-		user := v1.Group("/user")
-		user.Use(AuthMiddleware(clients)) // Protect user routes
+	// Public routes: no login needed, rate limited per client IP.
+	public := v1.Group("")
+	public.Use(RateLimitMiddleware(limiter))
+	{
+		public.POST("/register", handlers.RegisterUser(clients.Postgrest))
+		public.POST("/login", handlers.LoginUser(clients.Postgrest))
+
+		// Anyone with a share link can view and download that one file.
+		public.GET("/share/:token", handlers.GetPublicShare(clients))
+		public.GET("/share/:token/download", handlers.DownloadPublicShare(clients, bucketName))
+	}
+
+	// Everything below needs a valid login token. Auth runs first so the rate limiter
+	// can key on the user and use their personal rate_limit.
+	authed := v1.Group("")
+	authed.Use(AuthMiddleware(clients), RateLimitMiddleware(limiter))
+	{
+		user := authed.Group("/user")
 		{
 			user.GET("/quota", handlers.GetUserQuota(clients))
 			user.POST("/password", handlers.UpdatePassword(clients))
 			user.POST("/files/:id/share", handlers.ShareFile(clients))
+			user.DELETE("/files/:id/share", handlers.UnshareFile(clients))
 			user.GET("/shared-publicly", handlers.ListPubliclySharedFiles(clients))
 		}
 
-		// File routes (these should be accessible via v1, not user group)
-		v1.POST("/upload", handlers.UploadFile(clients, "file-vault-storage")) // Pass the entire clients object and bucket name
-		v1.GET("/files", handlers.ListFiles(clients))
-		v1.GET("/files/:id", handlers.GetFile(clients, "file-vault-storage"))
-		v1.DELETE("/files/:id", handlers.DeleteFile(clients, "file-vault-storage"))
-		v1.POST("/files/:id/share", handlers.ShareFile(clients))
+		authed.POST("/upload", handlers.UploadFile(clients, bucketName))
+		authed.GET("/files", handlers.ListFiles(clients))
+		authed.GET("/files/:id", handlers.GetFile(clients, bucketName))
+		authed.DELETE("/files/:id", handlers.DeleteFile(clients, bucketName))
+		authed.GET("/search", handlers.SearchFiles(clients))
+		authed.GET("/stats", handlers.GetStats(clients))
 
-		// Search route (accessible via v1)
-		v1.GET("/search", handlers.SearchFiles(clients))
-		v1.GET("/stats", handlers.GetStats(clients))
-
-		// Admin routes
-		v1.PUT("/admin/users/:id", handlers.UpdateUser(clients)) // Update user (e.g. quota, rate limit)
-
-		// Public share routes
-		router.GET("/share/:token", handlers.GetPublicShare(clients, "file-vault-storage"))
-		router.GET("/share/:token/download", handlers.DownloadPublicShare(clients, "file-vault-storage"))
-
-		// Admin routes
-		admin := v1.Group("/admin")
-		admin.Use(AdminAuthMiddleware(clients)) // Protect admin routes
+		admin := authed.Group("/admin")
+		admin.Use(AdminAuthMiddleware())
 		{
 			admin.GET("/files", handlers.AdminListFiles(clients))
+			admin.GET("/stats", handlers.AdminStats(clients))
 			admin.POST("/config", handlers.UpdateConfig(clients))
+			admin.PUT("/users/:id", handlers.UpdateUser(clients)) // Update user (e.g. quota, rate limit)
 		}
 	}
 }

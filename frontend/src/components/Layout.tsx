@@ -2,7 +2,8 @@ import React, { useCallback } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import useFileUpload from "../hooks/useFileUpload";
-import { Toaster, toast } from "sonner"; // Import Toaster and toast from sonner
+import { toast } from "sonner";
+import { notifyFilesChanged } from "../utils/api";
 import Loader from "./Loader";
 
 const Layout: React.FC = () => {
@@ -22,7 +23,9 @@ const Layout: React.FC = () => {
     } else if (errorCount > 0) {
       toast.error(`All ${errorCount} file(s) failed to upload.`);
     }
-    window.location.reload(); // Refresh the page after all uploads are processed
+    if (successCount > 0) {
+      notifyFilesChanged(); // Pages reload their file lists; a full reload would drop the toasts
+    }
   }, []);
 
   const {
@@ -38,8 +41,6 @@ const Layout: React.FC = () => {
         <Outlet />
       </main>
       <FileUploadConfirmationDialog />
-      <Toaster richColors position="bottom-right" />{" "}
-      {/* Render the Sonner Toaster */}
       {isUploading && <Loader />}
     </div>
   );

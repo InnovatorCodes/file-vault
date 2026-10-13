@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { formatBytes } from "../utils/formatBytes"; // Import formatBytes
 import ProfilePopover from "./ProfilePopover"; // Import the new component
+import { apiFetch, FILES_CHANGED_EVENT } from "../utils/api";
 
 // --- VARIANTS ---
 const containerVariants: Variants = {
@@ -54,7 +55,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onFileSelect }) => {
     const storedEmail = localStorage.getItem("email");
     const storedFirstName = localStorage.getItem("first_name");
     const storedLastName = localStorage.getItem("last_name");
-    const userId = localStorage.getItem("user_id");
 
     if (storedUsername) setUsername(storedUsername);
     if (storedEmail) setEmail(storedEmail);
@@ -62,12 +62,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onFileSelect }) => {
     if (storedLastName) setLastName(storedLastName);
 
     const fetchStorageStats = async () => {
-      if (!userId) {
-        console.error("User ID not found in localStorage.");
-        return;
-      }
       try {
-        const response = await fetch(`/api/v1/stats?user_id=${userId}`);
+        const response = await apiFetch("/api/v1/stats");
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -79,6 +75,8 @@ const Sidebar: React.FC<SidebarProps> = ({ onFileSelect }) => {
     };
 
     fetchStorageStats();
+    window.addEventListener(FILES_CHANGED_EVENT, fetchStorageStats);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, fetchStorageStats);
   }, [location]);
 
   const avatarLetter = username.charAt(0).toUpperCase();
@@ -152,10 +150,12 @@ const Sidebar: React.FC<SidebarProps> = ({ onFileSelect }) => {
             <div
               className="h-full bg-zinc-900 dark:bg-white"
               style={{
-                width: `${(storageStats.total_storage_used_deduplicated /
-                  (storageStats.storage_quota || 1)) * // Fallback to 1 to prevent division by zero
+                width: `${Math.min(
+                  100,
+                  (storageStats.total_storage_used_deduplicated /
+                    (storageStats.storage_quota || 1)) * // Fallback to 1 to prevent division by zero
                   100
-                  }%`,
+                )}%`,
               }}
             ></div>
           </div>

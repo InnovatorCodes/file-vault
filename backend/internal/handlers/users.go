@@ -2,15 +2,26 @@ package handlers
 
 import (
 	"encoding/json" // Import encoding/json
+	"file-vault/backend/internal/auth"
 	"file-vault/backend/internal/database"
 	"file-vault/backend/internal/models"
 	"fmt" // Import fmt for error handling
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/supabase-community/postgrest-go" // Import postgrest-go
 	"golang.org/x/crypto/bcrypt"
 )
+
+// minPasswordLength matches the check the frontend does before submitting.
+const minPasswordLength = 6
+
+// normalizeEmail makes "Alex@Example.com " and "alex@example.com" the same account.
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 // RegisterUser handles the registration of a new user
 func RegisterUser(db *postgrest.Client) gin.HandlerFunc {
@@ -27,6 +38,16 @@ func RegisterUser(db *postgrest.Client) gin.HandlerFunc {
 
 		if err := c.ShouldBindJSON(&newUser); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		newUser.Email = normalizeEmail(newUser.Email)
+		newUser.Username = strings.TrimSpace(newUser.Username)
+		if newUser.Username == "" || !strings.Contains(newUser.Email, "@") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "A username and a valid email address are required."})
+			return
+		}
+		if len(newUser.Password) < minPasswordLength {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Password must be at least %d characters long.", minPasswordLength)})
 			return
 		}
 
@@ -78,7 +99,12 @@ func RegisterUser(db *postgrest.Client) gin.HandlerFunc {
 		// The first return value is []byte (response body), second is count (int64), third is error
 		_, _, insertDBErr := db.From("users").Insert(user, false, "", "", "").Execute() // Use a new variable for the DB error
 		if insertDBErr != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create user: %v", insertDBErr)})
+			if strings.Contains(insertDBErr.Error(), "duplicate key") {
+				c.JSON(http.StatusConflict, gin.H{"error": "That username is already taken."})
+				return
+			}
+			log.Printf("Error creating user: %v", insertDBErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 			return
 		}
 
@@ -98,6 +124,7 @@ func LoginUser(db *postgrest.Client) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		credentials.Email = normalizeEmail(credentials.Email)
 
 		// Query user by email using postgrest-go
 		var users []struct {
@@ -142,10 +169,18 @@ func LoginUser(db *postgrest.Client) gin.HandlerFunc {
 			return
 		}
 
-		// At this point, the password is correct. Generate a JWT token.
-		// (Implementation of JWT generation will be added in the next step)
+		// At this point, the password is correct. Issue a signed token; every protected
+		// request must send it back, and the server reads the user ID from it.
+		token, err := auth.IssueToken(user.UserID)
+		if err != nil {
+			log.Printf("Error issuing token: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create session"})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"message":    "Login successful",
+			"token":      token,
 			"user_id":    user.UserID,
 			"username":   user.Username,
 			"email":      user.Email,
@@ -187,6 +222,10 @@ func UpdatePassword(clients *database.AppClients) gin.HandlerFunc {
 
 		if err := c.ShouldBindJSON(&payload); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if len(payload.NewPassword) < minPasswordLength {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("New password must be at least %d characters long.", minPasswordLength)})
 			return
 		}
 
@@ -264,6 +303,11 @@ func UpdateUser(clients *database.AppClients) gin.HandlerFunc {
 
 		if err := c.ShouldBindJSON(&updatePayload); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		if (updatePayload.StorageQuota != nil && *updatePayload.StorageQuota < 0) || (updatePayload.RateLimit != nil && *updatePayload.RateLimit < 0) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Values cannot be negative"})
 			return
 		}
 

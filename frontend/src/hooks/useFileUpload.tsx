@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { apiFetch, isLoggedIn } from "../utils/api";
 
 const useFileUpload = (
   onUploadSuccess?: (fileName: string) => void, // Modified to pass file name
@@ -32,8 +33,7 @@ const useFileUpload = (
 
     setIsUploading(true); // Start loading for all files
 
-    const ownerId = localStorage.getItem("user_id");
-    if (!ownerId) {
+    if (!isLoggedIn()) {
       alert("You must be logged in to upload files.");
       setIsUploading(false);
       handleCancelUpload();
@@ -48,7 +48,7 @@ const useFileUpload = (
       formData.append("file", file);
 
       try {
-        const response = await fetch(`/api/v1/upload?owner_id=${ownerId}`, {
+        const response = await apiFetch("/api/v1/upload", {
           method: "POST",
           body: formData,
         });

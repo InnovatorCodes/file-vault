@@ -18,8 +18,10 @@ import {
   Trash2,       // Added for delete action
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion"; // Added for dropdown animations
+import { toast } from "sonner";
 import { formatBytes } from "../utils/formatBytes"; // Assuming you have this utility
 import { useConfirmationDialog } from "../hooks/useConfirmationDialog"; // Import useConfirmationDialog hook
+import { apiFetch, saveBlob, notifyFilesChanged, FILES_CHANGED_EVENT } from "../utils/api";
 
 // --- TYPES ---
 interface FileItem {
@@ -142,23 +144,14 @@ const RecentFileCard = ({ file, openDropdownId, setOpenDropdownId }: { file: Fil
 
   const handleDelete = (fileId: string, filename: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    const userId = localStorage.getItem("user_id");
-    if (!userId) {
-      // toast.error("You must be logged in to delete files.");
-      return;
-    }
-
     openConfirmation({
       title: "Confirm Deletion",
       message: `Are you sure you want to delete "${filename}" ? This action cannot be undone.`,
       onConfirm: async () => {
         try {
-          const response = await fetch(
-            `/api/v1/files/${fileId}?user_id=${userId}`,
-            {
-              method: "DELETE",
-            }
-          );
+          const response = await apiFetch(`/api/v1/files/${fileId}`, {
+            method: "DELETE",
+          });
 
           if (!response.ok) {
             const errorData = await response.json();
@@ -166,7 +159,7 @@ const RecentFileCard = ({ file, openDropdownId, setOpenDropdownId }: { file: Fil
           }
 
           // toast.success("File deleted successfully!"); // Removed per user request
-          window.location.reload(); // Refresh the page to reflect changes
+          notifyFilesChanged(); // Refresh recent files and stats
         } catch (error) {
           console.error("Error deleting file:", error);
           // if (error instanceof Error) {
@@ -184,19 +177,11 @@ const RecentFileCard = ({ file, openDropdownId, setOpenDropdownId }: { file: Fil
   const handleDownload = async (file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
     try {
-      const response = await fetch(`/api/v1/files/${file.file_id}`);
+      const response = await apiFetch(`/api/v1/files/${file.file_id}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = file.filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      saveBlob(await response.blob(), file.filename);
     } catch (error) {
       console.error("Download failed:", error);
       // toast.error("Failed to download file. Please try again later.");
@@ -205,19 +190,9 @@ const RecentFileCard = ({ file, openDropdownId, setOpenDropdownId }: { file: Fil
 
   const handleShareFile = async (file: FileItem, event: React.MouseEvent) => {
     event.stopPropagation();
-    const userId = localStorage.getItem("user_id");
-    if (!userId) {
-      // toast.error("You must be logged in to share files.");
-      return;
-    }
-
     try {
-      const response = await fetch(`/api/v1/user/files/${file.file_id}/share`, {
+      const response = await apiFetch(`/api/v1/user/files/${file.file_id}/share`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-ID": userId,
-        },
       });
 
       if (!response.ok) {
@@ -305,21 +280,17 @@ const HomePage: React.FC = () => {
   const isAdmin = localStorage.getItem("is_admin") === "true";
   const { ConfirmationDialog, handleFileSelect } = useFileUpload(
     (fileName) => {
-      // onUploadSuccess
-      // toast.success(`Successfully uploaded ${fileName}`);
+      // onUploadSuccess (same messages as the sidebar's upload button)
+      toast.success(`File '${fileName}' uploaded successfully!`);
     },
     (errorMessage) => {
-      // onUploadError
-      // toast.error(errorMessage);
+      // onUploadError: without this, a rejected upload (quota, size, type) failed silently
+      toast.error(errorMessage);
     },
     (successCount) => {
       // onAllUploadsComplete
       if (successCount > 0) {
-        // Refresh the page or fetch data again to show new files
-        // Using a slight delay to allow the toast to be seen if we reload
-        setTimeout(() => {
-          window.location.reload();
-        }, 1000);
+        notifyFilesChanged(); // Refresh recent files, stats and the sidebar
       }
     }
   );
@@ -348,12 +319,9 @@ const HomePage: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const userId = localStorage.getItem("user_id");
-      if (!userId) return;
-
-      // Fetch recent files
+      // Fetch recent files (the server returns newest first)
       try {
-        const filesResponse = await fetch(`/api/v1/search?owner_id=${userId}&limit=5&sort_by=created_at`);
+        const filesResponse = await apiFetch("/api/v1/search?limit=5");
         if (filesResponse.ok) {
           let filesData = await filesResponse.json();
           // Sort files by created_at in descending order
@@ -367,8 +335,8 @@ const HomePage: React.FC = () => {
 
       // Fetch stats
       try {
-        const statsApi = isAdmin ? `/api/v1/admin/stats` : `/api/v1/stats?user_id=${userId}`;
-        const statsResponse = await fetch(statsApi);
+        const statsApi = isAdmin ? "/api/v1/admin/stats" : "/api/v1/stats";
+        const statsResponse = await apiFetch(statsApi);
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           setStats({
@@ -383,6 +351,8 @@ const HomePage: React.FC = () => {
     };
 
     fetchData();
+    window.addEventListener(FILES_CHANGED_EVENT, fetchData);
+    return () => window.removeEventListener(FILES_CHANGED_EVENT, fetchData);
   }, [isAdmin]);
 
   const handleBrowseClick = () => {

@@ -2,6 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import { LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { clearSession } from "../utils/api";
 
 interface ProfilePopoverProps {
   firstName: string;
@@ -19,11 +20,7 @@ const ProfilePopover: React.FC<ProfilePopoverProps> = ({
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    localStorage.removeItem("user_id");
-    localStorage.removeItem("username");
-    localStorage.removeItem("email");
-    localStorage.removeItem("first_name");
-    localStorage.removeItem("last_name");
+    clearSession(); // Also removes the token and admin flag
     navigate("/login");
     onClose();
   };
