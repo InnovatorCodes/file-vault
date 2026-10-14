@@ -2,6 +2,10 @@
 
 **Flux** is a secure, high-performance file storage and sharing platform designed for privacy, speed, and efficiency. Built with a modern tech stack, it features intelligent file deduplication, granular user management, and secure public sharing capabilities.
 
+**🔗 Live demo: [flux-file-vault.onrender.com](https://flux-file-vault.onrender.com)**: click **"Try the demo"** on the login page to explore without signing up.
+
+> Hosted on Render's free tier, so the first visit after a quiet period can take 30–60 seconds while the server wakes up.
+
 ## ✨ Key Features
 
 -   **🛡️ Secure Storage**: Robust file storage powered by **Supabase**.
